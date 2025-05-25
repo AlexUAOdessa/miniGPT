@@ -77,7 +77,8 @@ sequences = torch.tensor(sequences, dtype=torch.long)
 targets = torch.tensor(targets, dtype=torch.long)
 
 model.train()
-for epoch in range(10):
+epochs = 10
+for epoch in range(epochs):
     total_loss = 0
     for i in range(0, len(sequences), 32):
         batch_seq = sequences[i:i+32]
@@ -88,7 +89,8 @@ for epoch in range(10):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-    print(f'Epoch {epoch+1}, Loss: {total_loss / (len(sequences) // 32)}')
+    print(
+        f'Эпоха {epoch+1} из всего {epochs}, Loss: (Ошибки) {total_loss / (len(sequences) // 32)}')
 
 # Вывод информации о модели
 

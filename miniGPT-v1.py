@@ -128,11 +128,20 @@ def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word
 MODEL_PATH = 'minigpt_model.pth'
 
 # Проверка наличия сохранённой модели и выбор действия
+# vocab_size = vocab_size, embed_size = 128,n_heads = 4, n_layers = 2, dim_feedforward = 51
+
+"""
+Размер эмбеддингов: 512 (можно настроить через параметр embed_size).
+Количество слоёв: 4 трансформерных декодерных слоя (параметр n_layers).
+Количество голов внимания: 4 (параметр n_heads).
+Скрытый слой в прямом распространении: 512 (параметр dim_feedforward).
+Dropout: 0.1 для регуляризации.
+"""
 
 
 def load_or_train_model():
-    model = MiniGPT(vocab_size=vocab_size, embed_size=128,
-                    n_heads=4, n_layers=2, dim_feedforward=512)
+    model = MiniGPT(vocab_size=vocab_size, embed_size=512,
+                    n_heads=4, n_layers=4, dim_feedforward=512)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     sequences_tensor = torch.tensor(sequences, dtype=torch.long)
@@ -194,10 +203,11 @@ except Exception as e:
 
 # Генерация текста
 print('Использование miniGPT')
-seed = "Холмс сокровище"
+seed = "Холмс и Ватсон"
 try:
-    generated = generate_text(
-        model, seed, word_to_idx=word_to_idx, idx_to_word=idx_to_word)
+    seed = "Холмс и Ватсон"
+    generated = generate_text(model, seed, max_length=50,
+                              word_to_idx=word_to_idx, idx_to_word=idx_to_word)
     print(f"Сгенерированный текст: {generated}")
 except Exception as e:
     print(f"Ошибка при генерации текста: {e}")

@@ -1,3 +1,4 @@
+# pip install torch numpy matplotlib
 import torch
 import torch.nn as nn
 import math
@@ -102,7 +103,8 @@ def print_model_info(model, vocab_size):
     print(f"Размер словаря: {vocab_size} слов")
     print(f"Размер эмбеддингов: {model.embed_size}")
     print(f"Количество слоёв трансформера: {model.layers.__len__()}")
-    print(f"Количество голов механизма внимания: {model.layers[0].nhead}")
+    print(
+        f"Количество голов механизма внимания: {model.layers[0].self_attn.nhead}")
     print(
         f"Размер скрытого слоя в прямом распространении: {model.layers[0].dim_feedforward}")
     print(f"Максимальная длина последовательности: 1000 токенов")

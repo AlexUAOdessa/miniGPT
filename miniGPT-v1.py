@@ -47,9 +47,11 @@ targets = [data[i+1:i+sequence_length+1]
 
 # Определение модели MiniGPT
 
+#  по умолчанию vocab_size, embed_size = 128, n_heads = 4, n_layers = 2, dropout = 0.1):
+
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, embed_size=128, n_heads=4, n_layers=2, dropout=0.1):
+    def __init__(self, vocab_size, embed_size=256, n_heads=4, n_layers=2, dropout=0.1):
         super(MiniGPT, self).__init__()
         self.embed_size = embed_size
         self.word_embedding = nn.Embedding(vocab_size, embed_size)
@@ -76,12 +78,14 @@ class MiniGPT(nn.Module):
 
 
 def print_model_info(model, vocab_size):
+    # Подсчет общего количества параметров
     total_params = sum(p.numel() for p in model.parameters())
     print("\nИнформация о модели MiniGPT:")
     print(f"Размер словаря: {vocab_size} слов")
     print(f"Размер эмбеддингов: {model.embed_size}")
     print(f"Количество слоёв трансформера: {model.layers.__len__()}")
-    print(f"Количество голов механизма внимания: {model.layers[0].nhead}")
+    print(
+        f"Количество голов механизма внимания: {model.layers[0].self_attn.nhead}")
     print(
         f"Размер скрытого слоя в прямом распространении: {model.layers[0].dim_feedforward}")
     print(f"Максимальная длина последовательности: 1000 токенов")

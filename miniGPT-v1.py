@@ -4,7 +4,7 @@ import math
 from collections import Counter
 import time
 from datetime import datetime
-import os  # Для проверки наличия файла модели
+import os
 
 
 class time_func:
@@ -29,8 +29,12 @@ print(f'Текущая дата и время: {datetime.now().strftime("%Y-%m-%
 
 # Загрузка исходного текста
 print('Загрузка исходного текста')
-with open('data.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+try:
+    with open('data.txt', 'r', encoding='utf-8') as f:
+        text = f.read()
+except FileNotFoundError:
+    print("Ошибка: Файл data.txt не найден. Убедитесь, что файл существует.")
+    exit(1)
 
 # Токенизация (простая, на основе слов)
 words = text.split()
@@ -47,18 +51,20 @@ targets = [data[i+1:i+sequence_length+1]
 
 # Определение модели MiniGPT
 
-#  по умолчанию vocab_size, embed_size = 128, n_heads = 4, n_layers = 2, dropout = 0.1):
+# self, vocab_size, embed_size = 128, n_heads = 4, n_layers = 2, dropout = 0.1, dim_feedforward = 512
 
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, embed_size=256, n_heads=4, n_layers=2, dropout=0.1):
+    def __init__(self, vocab_size, embed_size=512, n_heads=4, n_layers=4, dropout=0.1, dim_feedforward=512):
         super(MiniGPT, self).__init__()
         self.embed_size = embed_size
+        self.n_heads = n_heads
+        self.dim_feedforward = dim_feedforward
         self.word_embedding = nn.Embedding(vocab_size, embed_size)
         self.position_embedding = nn.Embedding(1000, embed_size)
         self.layers = nn.ModuleList([
             nn.TransformerDecoderLayer(
-                embed_size, n_heads, dim_feedforward=512, dropout=dropout)
+                embed_size, n_heads, dim_feedforward=dim_feedforward, dropout=dropout)
             for _ in range(n_layers)
         ])
         self.fc_out = nn.Linear(embed_size, vocab_size)
@@ -78,16 +84,14 @@ class MiniGPT(nn.Module):
 
 
 def print_model_info(model, vocab_size):
-    # Подсчет общего количества параметров
     total_params = sum(p.numel() for p in model.parameters())
     print("\nИнформация о модели MiniGPT:")
     print(f"Размер словаря: {vocab_size} слов")
     print(f"Размер эмбеддингов: {model.embed_size}")
     print(f"Количество слоёв трансформера: {model.layers.__len__()}")
+    print(f"Количество голов механизма внимания: {model.n_heads}")
     print(
-        f"Количество голов механизма внимания: {model.layers[0].self_attn.nhead}")
-    print(
-        f"Размер скрытого слоя в прямом распространении: {model.layers[0].dim_feedforward}")
+        f"Размер скрытого слоя в прямом распространении: {model.dim_feedforward}")
     print(f"Максимальная длина последовательности: 1000 токенов")
     print(f"Общее количество параметров: {total_params:,}")
     print(f"Сложность модели: Упрощённая трансформерная модель с {model.layers.__len__()} слоями и {total_params:,} параметрами, "
@@ -96,15 +100,24 @@ def print_model_info(model, vocab_size):
 # Функция для генерации текста
 
 
-def generate_text(model, seed_text, max_length=50):
+def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word=None):
     model.eval()
     words = seed_text.split()
-    input_seq = torch.tensor([[word_to_idx[word]
-                             for word in words]], dtype=torch.long)
+    input_indices = []
+    for word in words:
+        if word not in word_to_idx:
+            print(
+                f"Ошибка: Слово '{word}' отсутствует в словаре. Заменяем на случайное слово.")
+            input_indices.append(list(word_to_idx.values())[0])
+        else:
+            input_indices.append(word_to_idx[word])
+
+    input_seq = torch.tensor([input_indices], dtype=torch.long)
     for _ in range(max_length):
         output = model(input_seq)
         probs = torch.softmax(output[:, -1, :], dim=-1)
-        next_word_idx = torch.argmax(probs, dim=-1).item()
+        # Используем выбор по вероятностям вместо argmax
+        next_word_idx = torch.multinomial(probs, 1).item()
         input_seq = torch.cat(
             [input_seq, torch.tensor([[next_word_idx]])], dim=1)
         words.append(idx_to_word[next_word_idx])
@@ -118,8 +131,8 @@ MODEL_PATH = 'minigpt_model.pth'
 
 
 def load_or_train_model():
-    model = MiniGPT(vocab_size=vocab_size,
-                    embed_size=128, n_heads=4, n_layers=2)
+    model = MiniGPT(vocab_size=vocab_size, embed_size=128,
+                    n_heads=4, n_layers=2, dim_feedforward=512)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     sequences_tensor = torch.tensor(sequences, dtype=torch.long)
@@ -129,17 +142,20 @@ def load_or_train_model():
         print(f"Обнаружена сохранённая модель по пути: {MODEL_PATH}")
         user_choice = input(
             "Хотите использовать сохранённую модель? (y/n): ").strip().lower()
-        if user_choice == 'y':
-            # Загрузка модели
-            model.load_state_dict(torch.load(MODEL_PATH))
-            print("Сохранённая модель загружена.")
-            return model, optimizer, criterion, sequences_tensor, targets_tensor
+        if user_choice == 'y' or user_choice == 'Y':
+            try:
+                model.load_state_dict(torch.load(MODEL_PATH))
+                print("Сохранённая модель загружена.")
+                return model, optimizer, criterion, sequences_tensor, targets_tensor
+            except Exception as e:
+                print(
+                    f"Ошибка при загрузке модели: {e}. Начинаем обучение новой модели.")
         else:
             print("Выбрано обучение новой модели.")
     else:
-        print("Сохранённая модель не найдена или пользователь выбрал новое обучение.")
+        print("Сохранённая модель не найдена.")
 
-    # Обучение модели
+    # Обучение модели, только если выбрано обучение или модель не загружена
     print('Обучение модели')
     t1 = time_func()
     model.train()
@@ -171,10 +187,17 @@ def load_or_train_model():
 model, optimizer, criterion, sequences, targets = load_or_train_model()
 
 # Вывод информации о модели
-print_model_info(model, vocab_size)
+try:
+    print_model_info(model, vocab_size)
+except Exception as e:
+    print(f"Ошибка вывода информации о модели: {e}")
 
 # Генерация текста
 print('Использование miniGPT')
-seed = "Холмс увлечение расследования"
-generated = generate_text(model, seed)
-print(f"Сгенерированный текст: {generated}")
+seed = "Холмс сокровище"
+try:
+    generated = generate_text(
+        model, seed, word_to_idx=word_to_idx, idx_to_word=idx_to_word)
+    print(f"Сгенерированный текст: {generated}")
+except Exception as e:
+    print(f"Ошибка при генерации текста: {e}")

@@ -22,8 +22,6 @@ class time_func:
         self.time_rez = f'Время выполнения блока программы: {int(h_exe)} часов {int(m_exe)} минут {s_exe:.2f} секунд'
         return self.time_rez
 
-# Предварительная обработка текста
-
 
 def preprocess_text(file_path, min_freq=5):
     print('Предварительная обработка текста')
@@ -45,8 +43,6 @@ def preprocess_text(file_path, min_freq=5):
                   'idx_to_word': idx_to_word}, f, ensure_ascii=False)
     return data, vocab_size, word_to_idx, idx_to_word
 
-# Определение модели MiniGPT
-
 
 class MiniGPT(nn.Module):
     def __init__(self, vocab_size, embed_size=512, n_heads=4, n_layers=4, dropout=0.1, dim_feedforward=512):
@@ -61,7 +57,8 @@ class MiniGPT(nn.Module):
                 d_model=embed_size,
                 nhead=n_heads,
                 dim_feedforward=dim_feedforward,
-                dropout=dropout
+                dropout=dropout,
+                batch_first=True
             ) for _ in range(n_layers)
         ])
         self.fc_out = nn.Linear(embed_size, vocab_size)
@@ -75,11 +72,12 @@ class MiniGPT(nn.Module):
         x = self.dropout(x)
         mask = torch.triu(torch.ones(seq_len, seq_len,
                           device=x.device) * float('-inf'), diagonal=1)
+        mask = mask.unsqueeze(0).repeat(batch_size * self.n_heads, 1, 1)
+        assert mask.size() == (batch_size * self.n_heads, seq_len, seq_len), \
+            f"Mask size {mask.size()} does not match expected {(batch_size * self.n_heads, seq_len, seq_len)}"
         for layer in self.layers:
             x = layer(x, src_mask=mask)
         return self.fc_out(x)
-
-# Функция для вывода информации о модели
 
 
 def print_model_info(model, vocab_size):
@@ -93,8 +91,6 @@ def print_model_info(model, vocab_size):
         f"Размер скрытого слоя в прямом распространении: {model.dim_feedforward}")
     print(f"Максимальная длина последовательности: 1000 токенов")
     print(f"Общее количество параметров: {total_params:,}")
-
-# Функция для генерации текста
 
 
 def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word=None, sequence_length=20):
@@ -119,14 +115,11 @@ def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word
     return ' '.join(generated_words)
 
 
-# Конфигурации моделей
 MODEL_CONFIGS = {
     'small': {'embed_size': 128, 'n_heads': 4, 'n_layers': 2, 'dim_feedforward': 512, 'dropout': 0.1},
     'medium': {'embed_size': 256, 'n_heads': 8, 'n_layers': 4, 'dim_feedforward': 1024, 'dropout': 0.1},
     'large': {'embed_size': 512, 'n_heads': 8, 'n_layers': 6, 'dim_feedforward': 2048, 'dropout': 0.1}
 }
-
-# Загрузка и обучение модели
 
 
 def load_or_train_model(model_name='medium'):
@@ -177,10 +170,14 @@ def load_or_train_model(model_name='medium'):
         for i in range(0, len(sequences), 32):
             batch_seq = sequences_tensor[i:i+32]
             batch_tgt = targets_tensor[i:i+32]
+            assert batch_seq.size() == (min(32, len(sequences)-i), sequence_length), \
+                f"Batch size mismatch: got {batch_seq.size()}, expected ({min(32, len(sequences)-i)}, {sequence_length})"
             optimizer.zero_grad()
             output = model(batch_seq)
             loss = criterion(output.view(-1, vocab_size), batch_tgt.view(-1))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=1.0)  # Gradient clipping
             optimizer.step()
             total_loss += loss.item()
         print(
@@ -197,47 +194,42 @@ def load_or_train_model(model_name='medium'):
     return model, optimizer, criterion, sequences_tensor, targets_tensor
 
 
-# Основной код
 print(f'Текущая дата и время: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Загрузка и обработка текста
 try:
     data, vocab_size, word_to_idx, idx_to_word = preprocess_text('data.txt')
 except FileNotFoundError:
     print("Ошибка: Файл data.txt не найден.")
     exit(1)
 
-# Создание последовательностей
 sequence_length = 20
 sequences = [data[i:i+sequence_length]
              for i in range(0, len(data) - sequence_length)]
 targets = [data[i+1:i+sequence_length+1]
            for i in range(0, len(data) - sequence_length)]
 
-# Выбор модели
 print("Доступные модели:", ', '.join(MODEL_CONFIGS.keys()))
 model_name = input("Выберите модель (small/medium/large): ").strip().lower()
 model, optimizer, criterion, sequences, targets = load_or_train_model(
     model_name)
 
-# Вывод информации о модели
 print_model_info(model, vocab_size)
 
-# Бесконечный цикл для генерации текста
 print('\nИспользование miniGPT')
-print("Введите Enter для генерации текста с начальным текстом 'seed 1'.")
+print("Введите Enter для генерации текста с начальным текстом 'Холмс и Ватсон'.")
 print("Введите 'exit', 'Exit' или 'EXIT' и нажмите Enter для выхода.")
-seed = "Холмс и Ватсон"  # Установка начального текста по умолчанию
+seed = "Холмс и Ватсон"
 
 while True:
     user_input = input("Ваш ввод: ").strip()
     if user_input.lower() == 'exit':
         print("Выход из программы.")
         break
+    if user_input == "":
+        user_input = seed
     try:
-        seed = user_input
-        generated = generate_text(model, seed, max_length=50, word_to_idx=word_to_idx,
+        generated = generate_text(model, user_input, max_length=50, word_to_idx=word_to_idx,
                                   idx_to_word=idx_to_word, sequence_length=sequence_length)
         print(f"Сгенерированный текст: {generated}\n")
     except Exception as e:

@@ -23,7 +23,7 @@ class time_func:
         return self.time_rez
 
 
-def preprocess_text(file_path, min_freq=5):
+def preprocess_text(file_path, min_freq=2):  # Уменьшили min_freq
     print('Предварительная обработка текста')
     with open(file_path, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -73,6 +73,7 @@ class MiniGPT(nn.Module):
         mask = torch.triu(torch.ones(seq_len, seq_len,
                           device=x.device) * float('-inf'), diagonal=1)
         mask = mask.unsqueeze(0).repeat(batch_size * self.n_heads, 1, 1)
+        print(f"Input size: {x.size()}, Mask size: {mask.size()}")
         assert mask.size() == (batch_size * self.n_heads, seq_len, seq_len), \
             f"Mask size {mask.size()} does not match expected {(batch_size * self.n_heads, seq_len, seq_len)}"
         for layer in self.layers:
@@ -106,7 +107,8 @@ def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word
         for _ in range(max_length):
             output = model(input_seq)
             probs = torch.softmax(output[:, -1, :], dim=-1)
-            next_word_idx = torch.multinomial(probs, 1).item()
+            next_word_idx = torch.argmax(
+                probs, dim=-1).item()  # Используем argmax
             input_indices.append(next_word_idx)
             input_indices = input_indices[-sequence_length:]
             input_seq = torch.tensor(
@@ -116,9 +118,9 @@ def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word
 
 
 MODEL_CONFIGS = {
-    'small': {'embed_size': 128, 'n_heads': 4, 'n_layers': 2, 'dim_feedforward': 512, 'dropout': 0.1},
-    'medium': {'embed_size': 256, 'n_heads': 8, 'n_layers': 4, 'dim_feedforward': 1024, 'dropout': 0.1},
-    'large': {'embed_size': 512, 'n_heads': 8, 'n_layers': 6, 'dim_feedforward': 2048, 'dropout': 0.1}
+    'small': {'embed_size': 512, 'n_heads': 8, 'n_layers': 6, 'dim_feedforward': 2048, 'dropout': 0.1},
+    'medium': {'embed_size': 1024, 'n_heads': 8, 'n_layers': 8, 'dim_feedforward': 4096, 'dropout': 0.1},
+    'large': {'embed_size': 2048, 'n_heads': 8, 'n_layers': 10, 'dim_feedforward': 8192, 'dropout': 0.1}
 }
 
 
@@ -135,7 +137,7 @@ def load_or_train_model(model_name='medium'):
         dim_feedforward=config['dim_feedforward'],
         dropout=config['dropout']
     ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)  # Уменьшили lr
     criterion = nn.CrossEntropyLoss()
     sequences_tensor = torch.tensor(sequences, dtype=torch.long).to(device)
     targets_tensor = torch.tensor(targets, dtype=torch.long).to(device)
@@ -164,7 +166,7 @@ def load_or_train_model(model_name='medium'):
     print('Обучение модели')
     t1 = time_func()
     model.train()
-    epochs = 10
+    epochs = 20  # Увеличили количество эпох
     for epoch in range(epochs):
         total_loss = 0
         for i in range(0, len(sequences), 32):
@@ -176,8 +178,7 @@ def load_or_train_model(model_name='medium'):
             output = model(batch_seq)
             loss = criterion(output.view(-1, vocab_size), batch_tgt.view(-1))
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), max_norm=1.0)  # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             total_loss += loss.item()
         print(
@@ -203,7 +204,7 @@ except FileNotFoundError:
     print("Ошибка: Файл data.txt не найден.")
     exit(1)
 
-sequence_length = 20
+sequence_length = 32  # Увеличили до 32
 sequences = [data[i:i+sequence_length]
              for i in range(0, len(data) - sequence_length)]
 targets = [data[i+1:i+sequence_length+1]

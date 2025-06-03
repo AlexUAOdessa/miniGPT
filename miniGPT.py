@@ -23,7 +23,7 @@ class time_func:
         return self.time_rez
 
 
-def preprocess_text(file_path, min_freq=2):  # Уменьшили min_freq
+def preprocess_text(file_path, min_freq=2):
     print('Предварительная обработка текста')
     with open(file_path, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -73,7 +73,6 @@ class MiniGPT(nn.Module):
         mask = torch.triu(torch.ones(seq_len, seq_len,
                           device=x.device) * float('-inf'), diagonal=1)
         mask = mask.unsqueeze(0).repeat(batch_size * self.n_heads, 1, 1)
-        print(f"Input size: {x.size()}, Mask size: {mask.size()}")
         assert mask.size() == (batch_size * self.n_heads, seq_len, seq_len), \
             f"Mask size {mask.size()} does not match expected {(batch_size * self.n_heads, seq_len, seq_len)}"
         for layer in self.layers:
@@ -96,7 +95,7 @@ def print_model_info(model, vocab_size):
 
 def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word=None, sequence_length=20):
     model.eval()
-    words = seed_text.split()
+    words = seed_text.lower().split()
     input_indices = [word_to_idx.get(
         word, word_to_idx['<UNK>']) for word in words]
     input_indices = input_indices[-sequence_length:]
@@ -107,8 +106,7 @@ def generate_text(model, seed_text, max_length=50, word_to_idx=None, idx_to_word
         for _ in range(max_length):
             output = model(input_seq)
             probs = torch.softmax(output[:, -1, :], dim=-1)
-            next_word_idx = torch.argmax(
-                probs, dim=-1).item()  # Используем argmax
+            next_word_idx = torch.argmax(probs, dim=-1).item()
             input_indices.append(next_word_idx)
             input_indices = input_indices[-sequence_length:]
             input_seq = torch.tensor(
@@ -124,7 +122,7 @@ MODEL_CONFIGS = {
 }
 
 
-def load_or_train_model(model_name='medium'):
+def load_or_train_model(model_name, vocab_size, sequences, targets):
     config = MODEL_CONFIGS.get(model_name, MODEL_CONFIGS['medium'])
     model_path = f'minigpt_model_{model_name}.pth'
     config_path = f'minigpt_config_{model_name}.json'
@@ -137,7 +135,7 @@ def load_or_train_model(model_name='medium'):
         dim_feedforward=config['dim_feedforward'],
         dropout=config['dropout']
     ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)  # Уменьшили lr
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
     criterion = nn.CrossEntropyLoss()
     sequences_tensor = torch.tensor(sequences, dtype=torch.long).to(device)
     targets_tensor = torch.tensor(targets, dtype=torch.long).to(device)
@@ -148,7 +146,8 @@ def load_or_train_model(model_name='medium'):
             "Использовать сохранённую модель? (y/n): ").strip().lower()
         if user_choice == 'y':
             try:
-                model.load_state_dict(torch.load(model_path))
+                model.load_state_dict(torch.load(
+                    model_path, map_location=device))
                 print("Модель загружена.")
                 if os.path.exists(config_path):
                     with open(config_path, 'r', encoding='utf-8') as f:
@@ -166,7 +165,7 @@ def load_or_train_model(model_name='medium'):
     print('Обучение модели')
     t1 = time_func()
     model.train()
-    epochs = 20  # Увеличили количество эпох
+    epochs = 20
     for epoch in range(epochs):
         total_loss = 0
         for i in range(0, len(sequences), 32):
@@ -204,7 +203,7 @@ except FileNotFoundError:
     print("Ошибка: Файл data.txt не найден.")
     exit(1)
 
-sequence_length = 32  # Увеличили до 32
+sequence_length = 32
 sequences = [data[i:i+sequence_length]
              for i in range(0, len(data) - sequence_length)]
 targets = [data[i+1:i+sequence_length+1]
@@ -212,15 +211,15 @@ targets = [data[i+1:i+sequence_length+1]
 
 print("Доступные модели:", ', '.join(MODEL_CONFIGS.keys()))
 model_name = input("Выберите модель (small/medium/large): ").strip().lower()
-model, optimizer, criterion, sequences, targets = load_or_train_model(
-    model_name)
+model, optimizer, criterion, sequences_tensor, targets_tensor = load_or_train_model(
+    model_name, vocab_size, sequences, targets)
 
 print_model_info(model, vocab_size)
 
 print('\nИспользование miniGPT')
 print("Введите Enter для генерации текста с начальным текстом 'Холмс и Ватсон'.")
 print("Введите 'exit', 'Exit' или 'EXIT' и нажмите Enter для выхода.")
-seed = "Холмс и Ватсон"
+seed = "Рим гладиатор"
 
 while True:
     user_input = input("Ваш ввод: ").strip()
